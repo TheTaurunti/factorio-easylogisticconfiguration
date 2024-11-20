@@ -1,0 +1,10 @@
+---------------------------------------------------------------------------------------------------
+Version: 1.0.4
+Date: 2024-11-20
+  Features:
+    - Factorio 1.1 compatibility snapshot
+      - Added settings paste functionality for belts which point into/away from loaders.
+      - Added automatic circuit connection feature when pasting machine settings to an inserter.
+      - Added support for ALL modded logistic chests/warehouses/etc.
+      - Added GitHub repo
+      - Initial release
