@@ -1,10 +1,10 @@
 {
   "name": "EasyLogisticConfiguration",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "title": "Easy Logistic Configuration",
   "author": "Taurunti",
   "contact": "thetaurunti@gmail.com",
-  "factorio_version": "1.1",
-  "dependencies": ["base >= 1.1"],
+  "factorio_version": "2.0",
+  "dependencies": ["base >= 2.0"],
   "description": "Say goodbye to the repetitive act of setting insertion limits and logistic chest filters! With support for all modded logistic containers, it has never been easier to configure your bot mall and get on with playing the game. Automatically sets wire connections and even supports loaders!"
 }

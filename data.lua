@@ -2,7 +2,7 @@
 -- Setting Up Events
 -- =================
 
-local settings_copy={
+local settings_copy = {
   type = "custom-input",
   name = "elc-copy",
   key_sequence = "",
@@ -10,7 +10,7 @@ local settings_copy={
   consuming = "none"
 }
 
-local settings_paste={
+local settings_paste = {
   type = "custom-input",
   name = "elc-paste",
   key_sequence = "",
@@ -18,5 +18,5 @@ local settings_paste={
   consuming = "none"
 }
 
-data:extend{settings_copy}
-data:extend{settings_paste}
+data:extend { settings_copy }
+data:extend { settings_paste }

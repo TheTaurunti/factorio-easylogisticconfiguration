@@ -12,10 +12,10 @@ end
 
 local function set_item_name_and_stack(item_name)
   if (not item_name) then return false end
-  if (game.item_prototypes[item_name])
+  if (prototypes.item[item_name])
   then
     _item_name = item_name
-    _item_stack_size = game.item_prototypes[_item_name].stack_size
+    _item_stack_size = prototypes.item[_item_name].stack_size
     return true
   else
     return false
@@ -78,17 +78,15 @@ end
 
 
 local function connect_neighbor_if_unconnected(entity_connect_from, entity_connect_to)
-  local green_connection = entity_connect_from.get_circuit_network(defines.wire_type.green)
-  local red_connection = entity_connect_from.get_circuit_network(defines.wire_type.red)
+  local green_connection = entity_connect_from.get_wire_connector(defines.wire_connector_id.circuit_green)
+  local red_connection = entity_connect_from.get_wire_connector(defines.wire_connector_id.circuit_red)
 
   if (not red_connection and not green_connection)
   then
-    -- The only time there WON'T be a circuit connection after this function,
-    -- ... is if there isn't a current connection AND no new connection could be made.
+    -- Handles the only "failure" of this function: No current connection AND no connection can be made.
     if (not entity_connect_to) then return false end
 
-    -- Doing this check prevent an instance of mod crashing with new loader/belt logic
-    -- >> When loader was pointing out of building (not circuit connectable) and you try to paste, would crash
+    -- We only auto-connect to containers.
     if (
           entity_connect_to.prototype.type ~= "container"
           and entity_connect_to.prototype.type ~= "logistic-container"
@@ -97,10 +95,8 @@ local function connect_neighbor_if_unconnected(entity_connect_from, entity_conne
       return false
     end
 
-    entity_connect_from.connect_neighbour {
-      wire = defines.wire_type.green,
-      target_entity = entity_connect_to
-    }
+    local green_connection_point = entity_connect_from.get_wire_connector(defines.wire_connector_id.circuit_green, true)
+    green_connection_point.connect_to(entity_connect_to.get_wire_connector(defines.wire_connector_id.circuit_green, true))
   end
 
   return true
@@ -126,24 +122,24 @@ local function set_enable_condition(event, entity, item_name, circuit_condition_
     return _MAGIC_NUMBER_STACK_LIMIT_PROGRESSION[closest.index]
   end
 
+  -- https://lua-api.factorio.com/latest/classes/LuaGenericOnOffControlBehavior.html
   local circuit_settings = entity.get_or_create_control_behavior()
-  local circuit_condition = circuit_settings["circuit_condition"].condition
+  local enable_condition = circuit_settings.circuit_condition
 
   local stacks_to_limit = 1
-  if (circuit_condition.first_signal.name == item_name)
+  if (enable_condition and enable_condition.first_signal and enable_condition.first_signal.name == item_name)
   then
-    local current_stacks = math.floor(circuit_condition.constant / _item_stack_size)
+    local current_stacks = math.floor(enable_condition.constant / _item_stack_size)
     stacks_to_limit = get_next_stack_amount(current_stacks)
   end
+  local circuit_limit_value = stacks_to_limit * _item_stack_size
 
   -- Set the value
-  local circuit_limit_value = stacks_to_limit * _item_stack_size
-  circuit_settings["circuit_condition"] = {
-    condition = {
-      first_signal = { type = "item", name = item_name },
-      comparator = circuit_condition_comparator,
-      constant = circuit_limit_value
-    }
+  circuit_settings.circuit_enable_disable = true
+  circuit_settings.circuit_condition = {
+    first_signal = { type = "item", name = item_name },
+    comparator = circuit_condition_comparator,
+    constant = circuit_limit_value
   }
 
   local floating_text = "[item=" .. item_name .. "] " .. circuit_condition_comparator .. " " .. circuit_limit_value
@@ -210,6 +206,12 @@ local function inserter_paste_logic(event, inserter)
 
   -- Set the circuit condition
   set_enable_condition(event, inserter, _item_name, circuit_condition_comparator)
+
+  -- Need to clear filters because in 2.0 copy pasting from assembler will set filters to ingredients.
+  -- It's cool, but completely and entirely against what this mod does - enable/disable condition set to RESULT
+  -- OH MY GOD WHY CAN'T I CHANGE THE DAMN FILTERS I TRIED EVERYTHING
+  -- >> Best I can do is blacklist the ingredients instead of whitelist. Not ideal but works.	
+  inserter.inserter_filter_mode = "blacklist"
 end
 
 
@@ -262,13 +264,13 @@ local function assembler_copy_logic(entity)
   local recipe = entity.get_recipe()
   if (not recipe) then return false end
 
-  local item_name = recipe.prototype.products[1].name
-  if (#recipe.prototype.products ~= 1)
+  local products = recipe.prototype.products
+  if (products and #products ~= 1)
   then
     return false
   end
 
-  return set_item_name_and_stack(item_name)
+  return set_item_name_and_stack(products[1].name)
 end
 
 
@@ -310,11 +312,7 @@ script.on_event("elc-copy", function(event)
   )
 
   -- Give player feedback
-  create_flying_text(
-    game.players[event.player_index],
-    text,
-    entity.position
-  )
+  create_flying_text(game.players[event.player_index], text, entity.position)
 end)
 
 
@@ -323,7 +321,6 @@ script.on_event("elc-paste", function(event)
 
   local entity = game.players[event.player_index].selected
   if (not entity) then return end
-
 
   if (entity.prototype.type == "inserter")
   then
@@ -339,14 +336,14 @@ script.on_event("elc-paste", function(event)
   local logistic_mode = entity.prototype.logistic_mode
   if (logistic_mode and (logistic_mode == "storage"))
   then
-    entity["storage_filter"] = game.item_prototypes[_item_name]
+    entity["storage_filter"] = prototypes.item[_item_name]
 
     -- This function is what clears locked slots
     -- https://lua-api.factorio.com/latest/classes/LuaInventory.html#set_bar
     local chest_inventory = entity.get_inventory(defines.inventory.chest)
     chest_inventory.set_bar()
 
-    local text = "[item=logistic-chest-storage][item=" .. _item_name .. "]"
+    local text = "[item=storage-chest][item=" .. _item_name .. "]"
     create_flying_text(game.players[event.player_index], text, entity.position)
   end
 end)
@@ -366,21 +363,17 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
     local chest_inventory = entity.get_inventory(defines.inventory.chest)
     chest_inventory.set_bar()
 
-    -- request_slot_count
-    -- The index of the configured request with the highest index for this entity.
-    -- https://lua-api.factorio.com/latest/classes/LuaEntity.html#request_slot_count
-    -- >> Reads 0 when no requests, reads 20 when 20th slot is configured
-    -- https://lua-api.factorio.com/latest/classes/LuaEntity.html#clear_request_slot
-    local highest_slot_index = entity.request_slot_count
-    while (highest_slot_index > 1) do
-      entity.clear_request_slot(highest_slot_index)
-      highest_slot_index = entity.request_slot_count
+    -- logistic request time. Clear existing then make mine.
+    local logi_point = entity.get_requester_point()
+    while (logi_point.sections_count and logi_point.sections_count > 0) do
+      logi_point.remove_section(1)
     end
 
-    -- https://lua-api.factorio.com/latest/classes/LuaEntity.html#set_request_slot
-    entity.set_request_slot({ name = _item_name, count = _MAGIC_NUMBER_BUFFER_REQUEST_QUANTITY }, 1)
+    -- https://lua-api.factorio.com/latest/classes/LuaLogisticPoint.html#add_section
+    local new_section = logi_point.add_section()
+    new_section.set_slot(1, { value = _item_name, min = _MAGIC_NUMBER_BUFFER_REQUEST_QUANTITY })
 
-    local floating_text = "[item=logistic-chest-buffer][item=" .. _item_name .. "] 50k"
+    local floating_text = "[item=buffer-chest][item=" .. _item_name .. "] 50k"
     create_flying_text(game.players[event.player_index], floating_text, entity.position)
   end
 end)
