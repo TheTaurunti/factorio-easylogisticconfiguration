@@ -4,18 +4,27 @@
 
 local _item_name = nil
 local _item_stack_size = nil
+local _item_quality_name = nil
+
+local _item_flying_text_name = nil
 
 local function clear_copied_info()
   _item_name = nil
   _item_stack_size = nil
+  _item_quality_name = nil
+  _item_flying_text_name = nil
 end
 
-local function set_item_name_and_stack(item_name)
+local function set_item_name_and_stack(item_name, quality_name)
   if (not item_name) then return false end
   if (prototypes.item[item_name])
   then
     _item_name = item_name
     _item_stack_size = prototypes.item[_item_name].stack_size
+    _item_quality_name = quality_name
+
+    local quality_name_part = _item_quality_name and (",quality=" .. _item_quality_name) or ""
+    _item_flying_text_name = "[item=" .. _item_name .. quality_name_part .. "]"
     return true
   else
     return false
@@ -103,7 +112,7 @@ local function connect_neighbor_if_unconnected(entity_connect_from, entity_conne
 end
 
 
-local function set_enable_condition(event, entity, item_name, circuit_condition_comparator)
+local function set_enable_condition(event, entity, circuit_condition_comparator)
   -- Nested utility function for better organization
   local function get_next_stack_amount(current_stacks)
     local immediate_lookup = _MAGIC_NUMBER_STACK_LIMIT_PROGRESSION[current_stacks]
@@ -127,7 +136,7 @@ local function set_enable_condition(event, entity, item_name, circuit_condition_
   local enable_condition = circuit_settings.circuit_condition
 
   local stacks_to_limit = 1
-  if (enable_condition and enable_condition.first_signal and enable_condition.first_signal.name == item_name)
+  if (enable_condition and enable_condition.first_signal and enable_condition.first_signal.name == _item_name)
   then
     local current_stacks = math.floor(enable_condition.constant / _item_stack_size)
     stacks_to_limit = get_next_stack_amount(current_stacks)
@@ -137,12 +146,12 @@ local function set_enable_condition(event, entity, item_name, circuit_condition_
   -- Set the value
   circuit_settings.circuit_enable_disable = true
   circuit_settings.circuit_condition = {
-    first_signal = { type = "item", name = item_name },
+    first_signal = { type = "item", name = _item_name, quality = _item_quality_name },
     comparator = circuit_condition_comparator,
     constant = circuit_limit_value
   }
 
-  local floating_text = "[item=" .. item_name .. "] " .. circuit_condition_comparator .. " " .. circuit_limit_value
+  local floating_text = _item_flying_text_name .. " " .. circuit_condition_comparator .. " " .. circuit_limit_value
   create_flying_text(game.players[event.player_index], floating_text, entity.position)
 end
 
@@ -205,7 +214,7 @@ local function inserter_paste_logic(event, inserter)
   end
 
   -- Set the circuit condition
-  set_enable_condition(event, inserter, _item_name, circuit_condition_comparator)
+  set_enable_condition(event, inserter, circuit_condition_comparator)
 
   -- Need to clear filters because in 2.0 copy pasting from assembler will set filters to ingredients.
   -- It's cool, but completely and entirely against what this mod does - enable/disable condition set to RESULT
@@ -253,15 +262,15 @@ local function transport_belt_paste_logic(event, belt)
   -- Determine # of stacks for inserter limit
   -- https://lua-api.factorio.com/latest/classes/LuaTransportBeltControlBehavior.html
 
-  set_enable_condition(event, belt, _item_name, circuit_condition_comparator)
+  set_enable_condition(event, belt, circuit_condition_comparator)
 end
 
 
 local function assembler_copy_logic(entity)
   clear_copied_info()
 
-  -- LuaRecipe
-  local recipe = entity.get_recipe()
+  -- Returns "LuaRecipe, LuaQualityPrototype"
+  local recipe, quality = entity.get_recipe()
   if (not recipe) then return false end
 
   local products = recipe.prototype.products
@@ -270,7 +279,7 @@ local function assembler_copy_logic(entity)
     return false
   end
 
-  return set_item_name_and_stack(products[1].name)
+  return set_item_name_and_stack(products[1].name, quality.name)
 end
 
 
@@ -307,7 +316,7 @@ script.on_event("elc-copy", function(event)
   local settings_copy_was_successful = settings_copy_function(entity)
   local text = (
     settings_copy_was_successful
-    and "[item=" .. _item_name .. "][virtual-signal=signal-green]"
+    and (_item_flying_text_name .. "[virtual-signal=signal-green]")
     or "[virtual-signal=signal-red]"
   )
 
@@ -343,7 +352,7 @@ script.on_event("elc-paste", function(event)
     local chest_inventory = entity.get_inventory(defines.inventory.chest)
     chest_inventory.set_bar()
 
-    local text = "[item=storage-chest][item=" .. _item_name .. "]"
+    local text = "[item=storage-chest]" .. _item_flying_text_name
     create_flying_text(game.players[event.player_index], text, entity.position)
   end
 end)
@@ -371,9 +380,12 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
 
     -- https://lua-api.factorio.com/latest/classes/LuaLogisticPoint.html#add_section
     local new_section = logi_point.add_section()
-    new_section.set_slot(1, { value = _item_name, min = _MAGIC_NUMBER_BUFFER_REQUEST_QUANTITY })
+    new_section.set_slot(1, {
+      value = { name = _item_name, quality = _item_quality_name },
+      min = _MAGIC_NUMBER_BUFFER_REQUEST_QUANTITY
+    })
 
-    local floating_text = "[item=buffer-chest][item=" .. _item_name .. "] 50k"
+    local floating_text = "[item=buffer-chest]" .. _item_flying_text_name .. " 50k"
     create_flying_text(game.players[event.player_index], floating_text, entity.position)
   end
 end)
